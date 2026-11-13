@@ -1,0 +1,470 @@
+/* ✦ Tarot picker ✦
+   Every colour below is mixed from the site tokens in index.css
+   (--bg, --bg-raised, --violet, --gold, --text), so the palette stays the same.
+   Change the --t-* variables to retune the cards.
+   Performance: no blur filters or blend modes on the cards; only transform
+   and opacity animate, so the browser can run it all on the GPU. */
+
+.tarot {
+  /* Size & shape */
+  --card-w: clamp(132px, 17vw, 270px);
+  --card-h: calc(var(--card-w) * 1.75);          /* 2 : 3.5 portrait */
+  --card-radius: clamp(16px, 1.8vw, 26px);
+  --pivot: 380%;                                 /* fan pivot below the card: bigger = flatter arc */
+  --lift: calc(var(--card-h) * -0.12);           /* how far the chosen card rises */
+  --reveal-scale: 1.1;                           /* chosen card grows a little as it flips */
+
+  /* Motion (keep the ms values in sync with Tarot.jsx) */
+  --lift-ms: 340ms;
+  --flip-ms: 520ms;
+  --spring: cubic-bezier(0.2, 0.9, 0.3, 1.12);
+  --smooth: cubic-bezier(0.45, 0.05, 0.25, 1);
+
+  /* Colours: derived from the site palette */
+  --t-indigo: var(--bg);
+  --t-deep: color-mix(in srgb, var(--violet) 18%, var(--bg));
+  --t-violet: color-mix(in srgb, var(--violet) 48%, var(--bg));
+  --t-periwinkle: color-mix(in srgb, var(--violet) 88%, var(--text));
+  --t-warm: color-mix(in srgb, var(--gold) 50%, var(--t-violet));
+  --t-glow: var(--gold);
+  --t-glow-hi: color-mix(in srgb, var(--gold) 55%, var(--text));
+  --t-line: var(--text);
+  --t-heading: var(--text);
+  --t-face: var(--bg-raised);
+  --t-face-sky: color-mix(in srgb, var(--violet) 30%, var(--bg-raised));
+
+  position: relative;
+  padding: 104px 0 80px;
+  overflow: hidden;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+/* Soft violet glow behind the fan */
+.tarot::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(48% 42% at 50% 52%, color-mix(in srgb, var(--violet) 22%, transparent), transparent 72%);
+  pointer-events: none;
+}
+
+.tarot__title {
+  position: relative;
+  text-align: center;
+  font-family: "Space Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-weight: 700;
+  font-size: clamp(16px, 2.2vw, 26px);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--t-heading);
+  padding: 0 16px;
+}
+
+/* ---------- Wheel ---------- */
+.tarot__sky {
+  position: relative;
+  margin-top: clamp(24px, 4vw, 48px);
+  overflow: hidden;
+  touch-action: pan-y;          /* horizontal swipes spin the wheel, vertical ones still scroll the page */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.tarot__stage {
+  position: relative;
+  width: 100%;
+  height: calc(var(--card-h) * 1.42);
+}
+
+/* Each slot sits on the wheel; Tarot.jsx sets its rotate() directly while spinning */
+.tslot {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--card-h) * 0.2);
+  width: var(--card-w);
+  height: var(--card-h);
+  margin-left: calc(var(--card-w) / -2);
+  transform-origin: 50% var(--pivot);
+  will-change: transform;
+}
+
+.tcard {
+  position: absolute;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--card-radius);
+  perspective: 1400px;
+  transform-origin: 50% var(--pivot);
+  transform: rotate(0deg) translateY(0);
+  transition: transform var(--lift-ms) var(--spring), opacity 0.3s ease;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-drag: none;
+}
+.tcard:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 5px;
+  border-radius: var(--card-radius);
+}
+
+/* Hover / keyboard focus: lift a little along the card's own axis */
+@media (hover: hover) {
+  .tarot:not(.has-selection) .tcard:hover {
+    transform: rotate(0deg) translateY(calc(var(--card-h) * -0.07));
+  }
+}
+.tarot:not(.has-selection) .tcard:focus-visible {
+  transform: rotate(0deg) translateY(calc(var(--card-h) * -0.07));
+}
+
+/* Chosen card: undo its slot's tilt, rise to the centre, sit on top */
+.tcard.is-selected {
+  transform: rotate(calc(var(--angle, 0deg) * -1)) translateY(var(--lift));
+  cursor: default;
+}
+/* Everyone else sinks and dims */
+.tarot.has-selection .tcard:not(.is-selected) {
+  transform: rotate(0deg) translateY(calc(var(--card-h) * 0.24));
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Arrow buttons at the sides (also the keyboard / touch way to spin) */
+.tarot__spin {
+  position: absolute;
+  top: calc(var(--card-h) * 0.55);
+  z-index: 210;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  color: var(--gold);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.2s ease, border-color 0.2s ease;
+}
+.tarot__spin svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.tarot__spin:hover, .tarot__spin:focus-visible { opacity: 1; border-color: var(--gold); }
+.tarot__spin--left { left: clamp(12px, 3vw, 40px); }
+.tarot__spin--right { right: clamp(12px, 3vw, 40px); }
+.tarot.has-selection .tarot__spin { opacity: 0; pointer-events: none; }
+
+/* 3D flip */
+.tcard__inner {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform-style: preserve-3d;
+  transition: transform var(--flip-ms) var(--smooth);
+}
+.tcard.is-revealed .tcard__inner { transform: rotateY(180deg) scale(var(--reveal-scale)); }
+
+.tcard__face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--card-radius);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.5), -10px 0 22px rgba(0, 0, 0, 0.3);
+}
+
+/* ---------- Card back ---------- */
+.tcard__back {
+  background: var(--t-indigo);
+  border: 1px solid var(--line-soft);
+}
+
+/* Aurora: layered soft gradients (no blur filter, so it's cheap to animate) */
+.tcard__aurora {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(90% 20% at 30% 47%, color-mix(in srgb, var(--t-periwinkle) 55%, transparent), transparent),
+    radial-gradient(100% 18% at 66% 64%, color-mix(in srgb, var(--t-warm) 70%, transparent), transparent),
+    radial-gradient(130% 36% at 50% 54%, color-mix(in srgb, var(--t-violet) 85%, transparent), transparent),
+    linear-gradient(180deg, var(--t-indigo) 0%, var(--t-deep) 26%, var(--t-violet) 52%, var(--t-deep) 80%, var(--t-indigo) 100%);
+}
+
+/* Dashed constellation paths */
+.tcard__lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.42;
+}
+.tcard__lines path {
+  fill: none;
+  stroke: var(--t-line);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.tcard__lines circle { fill: var(--t-line); }
+
+/* Warm aura that blooms on hover / selection */
+.tcard__aura {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(62% 36% at 50% 30%,
+    color-mix(in srgb, var(--t-glow-hi) 90%, transparent) 0%,
+    color-mix(in srgb, var(--t-glow) 55%, transparent) 22%,
+    color-mix(in srgb, var(--violet) 25%, transparent) 50%,
+    transparent 72%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  will-change: opacity;   /* own GPU layer: fading it never repaints the card */
+}
+
+/* Four-pointed sparkle in the middle of the aura */
+.tcard__sparkle {
+  position: absolute;
+  left: 43.5%;
+  top: 26%;
+  width: 13%;
+  height: auto;
+  fill: var(--text);
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  will-change: transform, opacity;
+}
+
+@media (hover: hover) {
+  .tarot:not(.has-selection) .tcard:hover .tcard__aura { opacity: 0.75; }
+  .tarot:not(.has-selection) .tcard:hover .tcard__sparkle { opacity: 0.8; transform: scale(0.85); }
+}
+.tarot:not(.has-selection) .tcard:focus-visible .tcard__aura { opacity: 0.75; }
+.tcard.is-selected .tcard__aura { opacity: 1; }
+.tcard.is-selected .tcard__sparkle { opacity: 1; }
+/* Pulse only while the back is showing; stop once the card is face up */
+.tcard.is-selected:not(.is-revealed) .tcard__sparkle {
+  animation: tarot-pulse 2.2s ease-in-out infinite;
+}
+@keyframes tarot-pulse {
+  0%, 100% { transform: scale(0.85); opacity: 0.8; }
+  50%      { transform: scale(1.1);  opacity: 1; }
+}
+
+/* Fine film grain: one tiny tile generated once in Tarot.jsx */
+.tcard__grain {
+  position: absolute;
+  inset: 0;
+  background-image: var(--t-grain, none);
+  pointer-events: none;
+}
+
+/* ---------- Card face (classic tarot layout) ---------- */
+.tcard__front {
+  transform: rotateY(180deg);
+  background:
+    radial-gradient(90% 50% at 50% 40%, color-mix(in srgb, var(--violet) 14%, var(--t-face)), transparent 75%),
+    var(--t-face);
+  border: 1px solid var(--gold-soft);
+}
+.tfront {
+  position: absolute;
+  inset: 5%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 5%;
+  padding: 7% 8% 8%;
+  border: 1px solid var(--gold-soft);
+  border-radius: calc(var(--card-radius) * 0.6);
+  box-shadow: inset 0 0 0 3px var(--t-face), inset 0 0 0 4px var(--line);
+  text-align: center;
+}
+.tfront__corner {
+  position: absolute;
+  width: 7%;
+  fill: var(--gold);
+}
+.tfront__corner--tl { top: 2.5%; left: 3.5%; }
+.tfront__corner--tr { top: 2.5%; right: 3.5%; }
+.tfront__corner--bl { bottom: 2.5%; left: 3.5%; }
+.tfront__corner--br { bottom: 2.5%; right: 3.5%; }
+
+.tfront__num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8%;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: calc(var(--card-w) * 0.1);
+  line-height: 1;
+  letter-spacing: 0.12em;
+  color: var(--gold);
+}
+.tfront__num::before,
+.tfront__num::after {
+  content: "";
+  width: 18%;
+  height: 1px;
+  background: var(--gold-soft);
+}
+
+/* Arched window holding the illustration */
+.tfront__window {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--gold-soft);
+  border-radius: 50% 50% 6px 6px / 22% 22% 6px 6px;
+  background: linear-gradient(180deg, var(--t-face-sky) 0%, var(--t-face) 80%);
+}
+.tart {
+  position: absolute;
+  inset: 4% 3% 0;
+  width: 94%;
+  height: 96%;
+  color: var(--gold);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tart .f { fill: color-mix(in srgb, var(--gold) 16%, transparent); }
+.tart .f.strong { fill: color-mix(in srgb, var(--gold) 32%, transparent); }
+.tart .s { fill: var(--gold); }
+.tart .c { fill: color-mix(in srgb, var(--text) 85%, var(--gold)); stroke: none; }
+.tart .d { stroke-dasharray: 2 2; }
+.tart .thick { stroke-width: 2.2; }
+.tart .wreath { stroke-width: 3.2; stroke-dasharray: 3 1.6; }
+.tart .lbl {
+  fill: var(--gold);
+  stroke: none;
+  font-family: var(--serif);
+  font-size: 7px;
+  text-anchor: middle;
+}
+
+/* Name plate */
+.tfront__banner {
+  padding: 4% 0;
+  border-top: 1px solid var(--gold-soft);
+  border-bottom: 1px solid var(--gold-soft);
+}
+.tfront__name {
+  font-family: var(--serif);
+  font-weight: 600;
+  display: block;
+  font-size: calc(var(--card-w) * 0.068);
+  line-height: 1.15;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text);
+  text-wrap: balance;
+}
+.tfront__rev {
+  position: absolute;
+  top: 13%;
+  right: 6%;
+  padding: 2% 5%;
+  border-radius: 999px;
+  background: var(--t-face);
+  border: 1px solid var(--gold-soft);
+  font-size: max(8px, calc(var(--card-w) * 0.04));
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+/* ---------- Planet horizon ---------- */
+.tarot__horizon {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--card-h) * 1.14);
+  width: max(150%, 1200px);
+  height: calc(var(--card-h) * 1.4);
+  transform: translateX(-50%);
+  border-radius: 50%;
+  border-top: 1px solid color-mix(in srgb, var(--violet) 55%, transparent);
+  background: radial-gradient(55% 45% at 50% 0%, color-mix(in srgb, var(--violet) 22%, var(--bg)), var(--bg) 70%);
+  box-shadow:
+    0 -12px 50px color-mix(in srgb, var(--violet) 28%, transparent),
+    inset 0 14px 40px color-mix(in srgb, var(--violet) 22%, transparent);
+  z-index: 150;
+  pointer-events: none;
+}
+
+/* ---------- Reading ---------- */
+.tarot__reading {
+  position: relative;
+  z-index: 2;
+  max-width: 580px;
+  min-height: 250px;
+  margin: 12px auto 0;
+  padding: 0 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+.tarot__reading > * { animation: tarot-fade 0.35s ease both; }
+.tarot__reading > :nth-child(2) { animation-delay: 0.04s; }
+.tarot__reading > :nth-child(3) { animation-delay: 0.08s; }
+.tarot__reading > :nth-child(4) { animation-delay: 0.12s; }
+.tarot__reading > :nth-child(5) { animation-delay: 0.16s; }
+.tarot__meta {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.tarot__name {
+  font-family: var(--serif);
+  font-size: clamp(28px, 4vw, 40px);
+  line-height: 1.1;
+}
+.tarot__fun {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: clamp(19px, 2.2vw, 23px);
+  line-height: 1.4;
+  color: var(--t-glow-hi);
+  text-wrap: balance;
+}
+.tarot__meaning { font-size: 14px; line-height: 1.7; color: var(--text-dim); }
+.tarot__meaning strong { color: var(--text); font-weight: 500; }
+.tarot__hint { font-size: 13px; color: var(--text-mute); }
+.tarot__again { margin-top: 6px; background: none; color: var(--text); font-family: inherit; cursor: pointer; }
+
+@keyframes tarot-fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ---------- Phones: fan is wider than the screen, so it scrolls sideways ---------- */
+@media (max-width: 760px) {
+  .tarot {
+    padding: 72px 0 56px;
+    --lift: calc(var(--card-h) * 0.02);
+    --reveal-scale: 1.32;   /* bigger reveal so the art is readable on a phone */
+  }
+}
+
+/* ---------- Reduced motion: no lift/flip/pulse, just fades ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .tcard,
+  .tcard__face,
+  .tcard__aura,
+  .tcard__sparkle { transition: opacity 0.3s ease !important; }
+  .tcard__inner { transform: none !important; }
+  .tcard__front { transform: none; opacity: 0; }
+  .tcard.is-revealed .tcard__front { opacity: 1; }
+  .tcard.is-revealed .tcard__back { opacity: 0; }
+  .tcard.is-selected .tcard__sparkle { animation: none !important; }
+}
